@@ -1695,7 +1695,7 @@ Constructor* SlentCompiler::getFunctionBody(vector<Token>& tokens, Scope scope)
 			continue;
 		}
 		else if (tokens[i].value == "for") {
-			Constructor* result = parseLoop(tokens, i, state, temp);
+			Constructor* result = parseFor(tokens, i, state, temp);
 			if (result != nullptr) {
 				function_body->addProperty(result);
 			}
@@ -2432,16 +2432,16 @@ Constructor* SlentCompiler::parseSwitch(vector<Token>& tokens, int& i, State& st
 				return nullptr;
 			}
 
+			int body_start = bracket_end + 1;
 			int body_end;
 
-			if (tokens[bracket_end + 1].value == "{") {
+			if (tokens[body_start].value == "{") {
 				if (!vec_check_index(tokens, bracket_end + 2)) {
 					throwCompileMessage(CompileMessage(SL0032E, currentFileName, tokens[bracket_end + 1].line));
 					i = tokens.size(); // break;
 					return nullptr;
 				}
 
-				int body_start = bracket_end + 1;
 				body_end = findBraceClose(tokens, bracket_end + 2, 1);
 				if (body_end == -1) {
 					throwCompileMessage(CompileMessage(SL0032E, currentFileName, tokens[bracket_end + 1].line));
@@ -2458,11 +2458,9 @@ Constructor* SlentCompiler::parseSwitch(vector<Token>& tokens, int& i, State& st
 				switch_->addProperty(body);
 			}
 			else {
-				if (!vec_check_index(tokens, bracket_end + 2)) {
-					throwCompileMessage(CompileMessage(SL0044E, currentFileName, tokens[bracket_end + 1].line));
-					i = tokens.size(); // break;
-					return nullptr;
-				}
+				throwCompileMessage(CompileMessage(SL0044E, currentFileName, tokens[bracket_end + 1].line));
+				i = bracket_end;
+				return nullptr;
 			}
 
 			i = body_end;
@@ -2498,6 +2496,10 @@ Constructor* SlentCompiler::parseLoop(vector<Token>& tokens, int& i, State& stat
 	int body_end = findBraceClose(tokens, body_start + 1, 1);
 
 	Constructor* body = getFunctionBody(tokens, Scope(body_start + 1, body_end - 1));
+	if (body == nullptr) {
+		i = body_end;
+		return nullptr;
+	}
 	body->setName("body");
 	loop->addProperty(body);
 
@@ -2545,7 +2547,74 @@ Constructor* SlentCompiler::parseFor(vector<Token>& tokens, int& i, State& state
 				return nullptr;
 			}
 
+			tuple<Constructor*, bool> init_expression_result = getExpression(condition_split[0], Scope(0, condition_split[0].size() - 1), 0, false);
+			if (!get<bool>(init_expression_result)) {
+				i = bracket_end;
+				return nullptr;
+			}
+			Constructor* init_expression = get<Constructor*>(init_expression_result);
+			init_expression->setName("init_expression");
 
+			tuple<Constructor*, bool> condition_expression_result = getExpression(condition_split[1], Scope(0, condition_split[1].size() - 1), 0, false);
+			if (!get<bool>(condition_expression_result)) {
+				i = bracket_end;
+				return nullptr;
+			}
+			Constructor* condition_expression = get<Constructor*>(condition_expression_result);
+			condition_expression->setName("condition_expression");
+
+			tuple<Constructor*, bool> updation_expression_result = getExpression(condition_split[2], Scope(0, condition_split[2].size() - 1), 0, false);
+			if (!get<bool>(updation_expression_result)) {
+				i = bracket_end;
+				return nullptr;
+			}
+			Constructor* updatation_expression = get<Constructor*>(updation_expression_result);
+			updatation_expression->setName("updatation_expression");
+
+			for_->addProperty(init_expression);
+			for_->addProperty(condition_expression);
+			for_->addProperty(updatation_expression);
+
+			int body_start = bracket_end + 1;
+
+			if (!vec_check_index(tokens, body_start)) {
+				throwCompileMessage(CompileMessage(SL0044E, currentFileName, tokens[bracket_end].line));
+				i = tokens.size(); // break;
+				return nullptr;
+			}
+
+			if (tokens[body_start].value != "{") {
+				throwCompileMessage(CompileMessage(SL0044E, currentFileName, tokens[bracket_end].line));
+				return nullptr;
+			}
+
+			if (!vec_check_index(tokens, body_start + 1)) {
+				throwCompileMessage(CompileMessage(SL0032E, currentFileName, tokens[body_start].line));
+				i = tokens.size(); // break;
+				return nullptr;
+			}
+
+			int body_end = findBraceClose(tokens, body_start + 1, 1);
+			if (body_end == -1) {
+				throwCompileMessage(CompileMessage(SL0032E, currentFileName, tokens[tokens.size() - 1].line));
+				i = body_start;
+				return nullptr;
+			}
+
+			Constructor* body = getFunctionBody(tokens, Scope(body_start + 1, body_end - 1));
+			if (body == nullptr) {
+				i = body_end;
+				return nullptr;
+			}
+			body->setName("body");
+			for_->addProperty(body);
+
+			i = body_end;
+
+			state = NONE;
+			temp = nullptr;
+
+			return for_;
 		}
 	}
 	else {
